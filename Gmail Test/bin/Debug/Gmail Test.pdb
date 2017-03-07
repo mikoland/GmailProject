@@ -1,0 +1,182 @@
+﻿using System;
+using System.ComponentModel;
+using System.Data;
+using System.IO;
+using System.Net;
+using System.Net.Mail;
+using System.Windows.Forms;
+
+//Ado.net
+using System.Data.OleDb; //引用System.Data.OleDb命名空間
+
+namespace Gmail_Test
+{
+    public partial class Form1 : Form
+    {
+        
+        /*Def for Windows Form*/
+        string strBody, strEmail, strTable;   
+        string strBuyName, strBookName, strAuthor, strTranslator, strPublish;
+        int unitPrice, qty, sum, total;
+
+        int MailCount;
+
+        MailMessage message;
+        SmtpClient smtp;
+
+        public Form1()
+        {
+            InitializeComponent();
+        }
+
+        private void btnSelect_Click(object sender, EventArgs e)
+        {
+            OpenFileDialog dialog = new OpenFileDialog();
+
+            dialog.Multiselect = false;
+            dialog.Title = "開啟舊檔";
+            dialog.InitialDirectory = ".\\"; //視窗開啟時的初始目錄位置
+            dialog.Filter = "Excel檔案(*.xls; *.xlsx)|*.xls; *.xlsx"; //要過濾，可以選擇的副檔名
+            if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK && dialog.FileName != null)
+            {
+                labPath.Text = dialog.FileName; //取得完整路徑
+                labShow.Text = Path.GetFileName(dialog.FileName); //只取得檔名及副檔名
+            }
+            else
+            {
+                return;
+            }
+        }
+
+        private void btnSubmit_Click(object sender, EventArgs e)
+        {
+            //1.檔案位置    注意絕對路徑 -> 非 \  是 \\
+            string FileName = labPath.Text;
+            //2.提供者名稱  Microsoft.Jet.OLEDB.4.0適用於2003以前版本，Microsoft.ACE.OLEDB.12.0 適用於2007以後的版本處理 xlsx 檔案
+            string ProviderName = "Microsoft.ACE.OLEDB.12.0;";
+            //3.Excel版本，Excel 8.0 針對Excel2000及以上版本，Excel5.0 針對Excel97。
+            string ExtendedString = "'Excel 8.0;";
+            //4.第一行是否為標題
+            string Hdr = "Yes;";
+            //5.IMEX=1 通知驅動程序始終將「互混」數據列作為文本讀取
+            string IMEX = "0';";
+
+            //連線字串
+            string cs =
+                    "Data Source=" + FileName + ";" +
+                    "Provider=" + ProviderName +
+                    "Extended Properties=" + ExtendedString +
+                    "HDR=" + Hdr +
+                    "IMEX=" + IMEX;
+            //Excel 的工作表名稱 (Excel左下角有的分頁名稱)
+            string SheetName = "sheet1";
+
+            using (OleDbConnection cn = new OleDbConnection(cs))
+            {
+                cn.Open();
+                string qs = "select * from[" + SheetName + "$]";
+
+                try
+                {
+                    using (OleDbDataAdapter dr = new OleDbDataAdapter(qs, cn))
+                    {
+                        DataTable dt = new DataTable();
+                        dr.Fill(dt);
+                        OleDbCommand cmd = cn.CreateCommand();
+                        cmd.CommandText = qs;
+                        OleDbDataReader DR = cmd.ExecuteReader();
+                        strTable = "<table border=1 cellSpacing=0 cellPadding=0>" +
+                                           "<tr><td align=center>書名</td><td align=center>作者</td><td align=center>譯者</td><td align=center>出版社</td><td align=center>單價</td><td align=center>數量</td><td align=center>小計</td></tr>";
+                        while (DR.Read())
+                        {
+                            strEmail = DR["EMAIL"].ToString();                          
+                            strBuyName = DR["讀者姓名"].ToString().Trim();
+                            strBookName = DR["書名"].ToString().Trim();
+                            strAuthor = DR["作者"].ToString().Trim();
+                            strTranslator = DR["譯者"].ToString().Trim();
+                            strPublish = DR["出版社"].ToString().Trim();
+                            unitPrice = Convert.ToInt32(DR["單價"].ToString().Trim());
+                            qty = Convert.ToInt32(DR["數量"].ToString().Trim());
+                            sum = Convert.ToInt32(DR["小計"].ToString().Trim());
+
+                            total += sum; 
+                            strTable = strTable + "<tr><td>&nbsp;" + strBookName + "&nbsp;</td><td>&nbsp;" + strAuthor + "&nbsp;</td><td>&nbsp;" + strTranslator + "&nbsp;</td><td align=right>&nbsp;" + strPublish + "</td><td align=right>&nbsp;" + unitPrice + "</td><td align=right>&nbsp;" + qty + "</td><td align=right>&nbsp;" + sum + "</td></tr>";
+
+                            /*信件內容設定*/
+                            message = new MailMessage();
+                            message.From = new MailAddress("abc@abc.com");
+                            message.To.Add(strEmail);
+                            message.Subject = "購書明細通知";
+                            message.SubjectEncoding = System.Text.Encoding.UTF8;
+                            message.BodyEncoding = System.Text.Encoding.UTF8;
+                            message.IsBodyHtml = true;
+
+                          
+                            strBody = "親愛的 " + strBuyName + "您好：<br><br>" +
+                                      "您所訂購的書籍及明細如下：<br>" +                                                
+                                                 "金額共計： " + total + " 元整<br>" +
+                                                 strTable + "</table><br>" +
+                            "PS: 請將此封信件留存至收到書籍為止，謝謝您！<br>" +
+                            "以上若有任何問題，請與John聯絡！<br><br><br><br>" +
+                            "**********************************************************************<br>" +
+                            "John Wang(王約翰)<br>" +
+                            "Service Department (客服部)<br>" +
+                            "BOOK Co., Ltd.<br>" +
+                            "來買書購物網<br>" +
+                            "Tel:02-23456789<br>" +
+                            "Website：www.book.com.tw<br>" +
+                            "Add: 10040 臺北市中正區忠孝西路一段9999號";
+
+                            message.Body = strBody;
+                          
+                        }
+                        MailCount++;
+                        // set smtp details
+                        smtp = new SmtpClient("smtp.gmail.com");
+                            smtp.Port = 587;
+                            smtp.EnableSsl = true;
+                            smtp.Credentials = new NetworkCredential("mikoprogramland@gmail.com", "mwynfwqhqpiwkcca");
+                            smtp.SendAsync(message, message.Subject);
+                        smtp.SendCompleted += new SendCompletedEventHandler(smtp_SendCompleted);
+
+                    }
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show(ex.Message);
+                }
+            }
+
+            // btnSubmit.Enabled = true;
+            pnlShow.Visible = false;
+        
+            llabPre.Visible = true;       
+        }
+
+        void smtp_SendCompleted(object sender, AsyncCompletedEventArgs e)
+        {
+            if (e.Cancelled == true)
+            {
+                MessageBox.Show("信件傳送失敗！", "提示訊息", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            else if (e.Error != null)
+            {
+                MessageBox.Show(e.Error.Message);
+            }
+            else
+            {
+                MessageBox.Show("匯款通知作業成功，共發送了 " + MailCount + " 封Mail！", "提示訊息", MessageBoxButtons.OK, MessageBoxIcon.Asterisk);
+            }
+
+        }
+
+
+
+
+        private void labPre_Click(object sender, EventArgs e)
+        {
+            pnlShow.Visible = true;
+        }
+
+    }
+}
